@@ -1,0 +1,32 @@
+{
+  "name": "direct-store",
+  "version": "1.0.0",
+  "description": "Sample eCommerce Store",
+  "main": "index.js",
+  "repository": "git@github.com:ninnemana/direct-store.git",
+  "author": "Alex Ninneman",
+  "license": "MIT",
+  "dependencies": {
+    "autoprefixer": "^7.1.4",
+    "babel-plugin-module-resolver": "^2.7.1",
+    "babel-plugin-wrap-in-js": "^1.1.1",
+    "glob": "^7.1.2",
+    "material-ui": "^0.19.3",
+    "next": "^3.2.2",
+    "node-sass": "^4.5.3",
+    "normalize.css": "^7.0.0",
+    "postcss-easy-import": "^3.0.0",
+    "postcss-loader": "^2.0.6",
+    "raw-loader": "^0.5.1",
+    "react": "15",
+    "react-dom": "15",
+    "react-tap-event-plugin": "2.0.1",
+    "sass-loader": "^6.0.6",
+    "webpack-bundle-analyzer": "^2.9.0"
+  },
+  "scripts": {
+    "dev": "next",
+    "build": "next build",
+    "start": "next start"
+  }
+}
