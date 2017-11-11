@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NYTimes/marvin"
+	httptransport "github.com/go-kit/kit/transport/http"
 )
 
 type service struct{}
@@ -21,10 +21,10 @@ func (s service) Option() []httptransport.ServerOption {
 				return
 			}
 
-			accept = accept.(string)
+			// accept = accept.(string)
 			switch {
-			case strings.Contains(accept, "proto"):
-				marvin.EncodeProtoResponse(ctx, w, err)
+			case strings.Contains(accept.(string), "proto"):
+				// marvin.EncodeProtoResponse(ctx, w, err)
 			default:
 				httptransport.EncodeJSONResponse(ctx, w, err)
 			}
