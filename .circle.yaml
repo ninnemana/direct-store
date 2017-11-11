@@ -1,0 +1,18 @@
+
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.8
+
+    working_directory: /go/src/github.com/ninnemana/direct-store
+
+    environment:
+
+    steps:
+      - checkout
+      - run:
+          name: Run unit tests
+          environment:
+          command: |
+            go test -v ./...
