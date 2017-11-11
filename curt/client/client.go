@@ -1,30 +1,41 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
+	"cloud.google.com/go/logging"
+	gomem "github.com/bradfitz/gomemcache/memcache"
 	"github.com/pkg/errors"
+	"google.golang.org/appengine"
+	"google.golang.org/appengine/memcache"
+	"google.golang.org/appengine/urlfetch"
 )
 
 type Provider interface {
-	Get(Options) error
-	Post(Options) error
-	Put(Options) error
-	Patch(Options) error
-	Head(Options) error
-	Delete(Options) error
-	Options(Options) error
+	Do(Options) error
+	// Get(Options) error
+	// Post(Options) error
+	// Put(Options) error
+	// Patch(Options) error
+	// Head(Options) error
+	// Delete(Options) error
+	// Options(Options) error
 }
 
 type Client struct {
-	Hostname   string
-	Schema     string
-	PublicKey  string
-	PrivateKey string
-	Client     *http.Client
+	hostname   string
+	schema     string
+	publicKey  string
+	privateKey string
+	client     *http.Client
+	cache      *Codec
+	log        *logging.Logger
 }
 
 type Error struct {
@@ -32,15 +43,147 @@ type Error struct {
 	Details string `json:"messageDetails"`
 }
 
-func (c *Client) Get(opts Options) error {
-	if c.Client == nil {
+func New(l *logging.Logger, schema, host, pubKey, privateKey string) (*Client, error) {
+	if l == nil {
+		return nil, errors.New("missing logging.Logger")
+	}
+
+	cache, err := NewCache(time.Hour*24, "directstore")
+	if err != nil {
+		return nil, err
+	}
+
+	client := Client{
+		log:        l,
+		hostname:   host,
+		schema:     schema,
+		publicKey:  pubKey,
+		privateKey: privateKey,
+		cache:      cache,
+	}
+
+	switch appengine.IsDevAppServer() {
+	case false:
+		client.client = http.DefaultClient
+	default:
+		client.client = urlfetch.Client(context.Background())
+	}
+
+	l.Log(logging.Entry{
+		Severity: logging.Debug,
+		Payload:  "Creating new CURT HTTP Client",
+		Labels: map[string]string{
+			"pkg":       "curt/client",
+			"func":      "new",
+			"hostname":  host,
+			"schema":    schema,
+			"publicKey": pubKey,
+		},
+	})
+
+	return &client, nil
+}
+
+func (c *Client) RequestKey(opts Options) (string, error) {
+	path, err := c.url(opts)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return "", err
+	}
+
+	qs, err := opts.QueryString.Build()
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := strings.Replace(opts.Endpoint, "/", "_", -1)
+	query := []string{}
+	for k, v := range qs {
+		query = append(query, fmt.Sprintf("%s:%s", k, v))
+	}
+
+	key := fmt.Sprintf(
+		"%s_%s",
+		u.Host,
+		endpoint,
+	)
+
+	if len(query) > 0 {
+		key = fmt.Sprintf(
+			"%s_%s",
+			key,
+			strings.Join(query, "_"),
+		)
+	}
+
+	return key, nil
+}
+
+func (c *Client) Do(opts Options) error {
+	cacheKey, err := c.RequestKey(opts)
+	if err != nil {
+		return errors.Wrap(err, "failed to create cache key")
+	}
+
+	var item interface{}
+	err = c.cache.Get(cacheKey, &item)
+	switch err {
+	case nil:
+		opts.Result = item
+		return nil
+	case memcache.ErrCacheMiss:
+	case gomem.ErrCacheMiss:
+	default:
+		// c.log.Log(logging.Entry{
+		// 	Severity: logging.Error,
+		// 	Payload: map[string]interface{}{
+		// 		"msg": "Failed to make memcache GET call",
+		// 		"err": err.Error(),
+		// 		"key": cacheKey,
+		// 	},
+		// 	Labels: map[string]string{
+		// 		"pkg":  "curt/client",
+		// 		"func": "Do",
+		// 	},
+		// })
+		// return errors.Wrap(err, "failed to make memcache call")
+	}
+
+	if c.client == nil {
 		return errors.New("invalid client.Client")
 	}
 
-	if opts.QueryString == nil {
-		opts.QueryString = make(map[string]string, 0)
+	switch opts.Method {
+	case http.MethodGet:
+		err = c.get(opts)
+	case http.MethodPost:
+		err = c.post(opts)
+	case http.MethodPut:
+		err = c.put(opts)
+	case http.MethodPatch:
+		err = c.patch(opts)
+	case http.MethodDelete:
+		err = c.delete(opts)
+	// case http.MethodHead:
+	// case http.MethodOptions:
+	// case http.MethodTrace:
+	// case http.MethodConnect:
+	default:
+		return errors.Errorf("HTTP Method (%s) not supported", opts.Method)
 	}
-	opts.QueryString["key"] = c.PublicKey
+
+	if err != nil {
+		return errors.Wrap(err, "failed to make client HTTP call")
+	}
+
+	return nil
+	// return c.cache.Add(cacheKey, &opts.Result)
+}
+
+func (c *Client) get(opts Options) error {
 
 	path, err := c.url(opts)
 	if err != nil {
@@ -52,7 +195,7 @@ func (c *Client) Get(opts Options) error {
 		return err
 	}
 
-	resp, err := c.Client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -80,35 +223,35 @@ func (c *Client) Get(opts Options) error {
 	return nil
 }
 
-func (c *Client) Post(opts Options) error {
+func (c *Client) post(opts Options) error {
 	panic("not implemented")
 }
 
-func (c *Client) Put(opts Options) error {
+func (c *Client) put(opts Options) error {
 	panic("not implemented")
 }
 
-func (c *Client) Patch(opts Options) error {
+func (c *Client) patch(opts Options) error {
 	panic("not implemented")
 }
 
-func (c *Client) Head(opts Options) error {
+func (c *Client) head(opts Options) error {
 	panic("not implemented")
 }
 
-func (c *Client) Delete(opts Options) error {
+func (c *Client) delete(opts Options) error {
 	panic("not implemented")
 }
 
-func (c *Client) Options(opts Options) error {
+func (c *Client) options(opts Options) error {
 	panic("not implemented")
 }
 
 func (c Client) url(o Options) (string, error) {
-	if c.Schema == "" {
+	if c.schema == "" {
 		return "", errors.New("must specify a request schema 'http|https'")
 	}
-	if c.Hostname == "" {
+	if c.hostname == "" {
 		return "", errors.New("must specify a host to make requests against")
 	}
 
@@ -118,17 +261,28 @@ func (c Client) url(o Options) (string, error) {
 
 	path := fmt.Sprintf(
 		"%s://%s/%s",
-		c.Schema,
-		c.Hostname,
+		c.schema,
+		c.hostname,
 		o.Endpoint,
 	)
 
+	qs := map[string]string{}
 	if o.QueryString != nil {
-		var qs string
-		for k, v := range o.QueryString {
-			qs = fmt.Sprintf("%s%s=%s&", qs, k, v)
+		var err error
+		qs, err = o.QueryString.Build()
+		if err != nil {
+			return "", err
 		}
-		path = fmt.Sprintf("%s?%s", path, qs)
+	}
+
+	qs["key"] = c.publicKey
+
+	if qs != nil {
+		var query string
+		for k, v := range qs {
+			query = fmt.Sprintf("%s%s=%s&", query, k, v)
+		}
+		path = fmt.Sprintf("%s?%s", path, query)
 	}
 
 	return path, nil
