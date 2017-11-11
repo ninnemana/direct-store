@@ -5,6 +5,7 @@ jobs:
     docker:
       - image: circleci/golang:1.8
     steps:
+      - run: cd /go/src/github.com/ninnemana/direct-store
       - checkout
       - run: go get -u github.com/golang/dep/cmd/dep
       - run: dep ensure
