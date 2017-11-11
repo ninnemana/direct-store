@@ -2,6 +2,9 @@ package categories
 
 import (
 	"context"
+	"encoding/gob"
+	"fmt"
+	"net/http"
 
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/trace"
@@ -31,7 +34,10 @@ type Service struct {
 }
 
 // New initiates a version of the categories.Service as defined by the provided configuration.
-func New(cfg Config) (curt.Categories, error) {
+func New(cfg Config) (*Service, error) {
+	gob.Register(&curt.Category{})
+	gob.Register([]curt.Category{})
+
 	if cfg.Client == nil {
 		return nil, errors.New("client.Client was not provided")
 	}
@@ -53,18 +59,27 @@ func New(cfg Config) (curt.Categories, error) {
 		s.Log = cfg.Log.(*logging.Client).Logger(logPrefix)
 	}
 
-	return s, nil
+	return &s, nil
 }
 
 // List implements the CategoryInteractors List requirement.
-func (s Service) List() (interface{}, error) {
+func (s Service) List(params *ListParams) ([]curt.Category, error) {
 	res := []curt.Category{}
 	options := client.Options{
-		Endpoint: "/category",
-		Result:   &res,
+		Method:      http.MethodGet,
+		Endpoint:    "/category",
+		Result:      &res,
+		QueryString: params,
 	}
 
-	err := s.Client.Get(options)
+	s.Log.Log(logging.Entry{
+		Severity: logging.Debug,
+		Payload: map[string]interface{}{
+			"options": options,
+		},
+	})
+
+	err := s.Client.Do(options)
 	if err != nil {
 		s.Log.Log(logging.Entry{
 			Severity: logging.Error,
@@ -80,6 +95,71 @@ func (s Service) List() (interface{}, error) {
 }
 
 // Get implements the CategoryInteractors Get requirement.
-func (s Service) Get() (interface{}, error) {
-	return nil, errors.New("not implemented")
+func (s Service) Get(params *GetParams) (*curt.Category, error) {
+	if err := params.Validate(); err != nil {
+		return nil, err
+	}
+	res := curt.Category{}
+	options := client.Options{
+		Method:      http.MethodGet,
+		Endpoint:    fmt.Sprintf("/category/%d", *params.ID),
+		Result:      &res,
+		QueryString: params,
+	}
+
+	s.Log.Log(logging.Entry{
+		Severity: logging.Debug,
+		Payload: map[string]interface{}{
+			"options": options,
+		},
+	})
+
+	err := s.Client.Do(options)
+	if err != nil {
+		s.Log.Log(logging.Entry{
+			Severity: logging.Error,
+			Payload: map[string]interface{}{
+				"error":   err.Error(),
+				"options": options,
+			},
+		})
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+// GetParts implements the CategoryInteractors GetParts requirement.
+func (s Service) GetParts(params *GetParams) (*curt.PartResponse, error) {
+	if err := params.Validate(); err != nil {
+		return nil, err
+	}
+	res := curt.PartResponse{}
+	options := client.Options{
+		Method:      http.MethodGet,
+		Endpoint:    fmt.Sprintf("/category/%d/parts", *params.ID),
+		Result:      &res,
+		QueryString: params,
+	}
+
+	s.Log.Log(logging.Entry{
+		Severity: logging.Debug,
+		Payload: map[string]interface{}{
+			"options": options,
+		},
+	})
+
+	err := s.Client.Do(options)
+	if err != nil {
+		s.Log.Log(logging.Entry{
+			Severity: logging.Error,
+			Payload: map[string]interface{}{
+				"error":   err.Error(),
+				"options": options,
+			},
+		})
+		return nil, err
+	}
+
+	return &res, nil
 }
