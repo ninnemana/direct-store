@@ -211,5 +211,7 @@ func TestGetParts(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t.Log(parts)
+	if len(parts.Parts) == 0 {
+		t.Error("should have returned parts")
+	}
 }
