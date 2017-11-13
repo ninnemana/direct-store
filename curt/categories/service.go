@@ -2,7 +2,6 @@ package categories
 
 import (
 	"context"
-	"encoding/gob"
 	"fmt"
 	"net/http"
 
@@ -35,9 +34,6 @@ type Service struct {
 
 // New initiates a version of the categories.Service as defined by the provided configuration.
 func New(cfg Config) (*Service, error) {
-	gob.Register(&curt.Category{})
-	gob.Register([]curt.Category{})
-
 	if cfg.Client == nil {
 		return nil, errors.New("client.Client was not provided")
 	}
