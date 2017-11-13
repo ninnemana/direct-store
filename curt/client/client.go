@@ -94,9 +94,12 @@ func (c *Client) RequestKey(opts Options) (string, error) {
 		return "", err
 	}
 
-	qs, err := opts.QueryString.Build()
-	if err != nil {
-		return "", err
+	qs := map[string]string{}
+	if opts.QueryString != nil {
+		qs, err = opts.QueryString.Build()
+		if err != nil {
+			return "", err
+		}
 	}
 
 	endpoint := strings.Replace(opts.Endpoint, "/", "_", -1)
